@@ -1,0 +1,85 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Terraform SNS Emails Template",
+  "Parameters": {
+    "DisplayName": {
+      "Type": "String",
+      "Default": "-",
+      "Description": "A developer-defined string that can be used to identify this SNS topic."
+    },
+    "Emails" : {
+      "Type": "CommaDelimitedList",
+      "Default": "-",
+      "Description": "The subscription's endpoint"
+    }
+  },
+  "Resources": {
+    "LambdaBasicExecRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "LambdaBasicExecRole",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        ]
+      }
+    },
+    "LambdaSNSTopicEndpoints": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "ZipFile": { "Fn::Join": [ "", [
+            "import cfnresponse", "\n",
+            "def handler(event, context):", "\n",
+            "    if event['RequestType'] == 'Delete':", "\n",
+            "        cfnresponse.send(event, context, cfnresponse.SUCCESS, {})", "\n",
+            "    emails = event['ResourceProperties']['Emails']", "\n",
+            "    response_data = {}", "\n",
+            "    response_data['SNSSubscriptions'] = [{'Endpoint': email, 'Protocol': 'email'} for email in emails]", "\n",
+            "    cfnresponse.send(event, context, cfnresponse.SUCCESS, response_data)", "\n"
+          ] ] }
+        },
+        "Handler": "index.handler",
+        "Role": { "Fn::GetAtt": [ "LambdaBasicExecRole", "Arn" ] },
+        "Runtime": "python2.7"
+      }
+    },
+    "SNSTopicEndpointsHelper": {
+      "Type": "Custom::LambdaSNSTopicEndpointsHelper",
+      "Version": 1,
+      "Properties": {
+        "ServiceToken": { "Fn::GetAtt": [ "LambdaSNSTopicEndpoints", "Arn" ] },
+        "Emails": { "Ref": "Emails" }
+      }
+    },
+    "SNSTopic": {
+      "Type": "AWS::SNS::Topic",
+      "Properties": {
+        "DisplayName": { "Ref": "DisplayName" },
+        "Subscription": { "Fn::GetAtt": [ "SNSTopicEndpointsHelper", "SNSSubscriptions" ] }
+      }
+    }
+  },
+  "Outputs": {
+    "TopicArn": {
+      "Description": "The ARN of the Topic.",
+      "Value": { "Ref": "SNSTopic" }
+    },
+    "TopicName": {
+      "Description": "The name of the Topic.",
+      "Value": { "Fn::GetAtt": [ "SNSTopic", "TopicName" ] }
+    }
+  }
+}
